@@ -1,0 +1,1 @@
+Adapted from syssi/esphome-jk-bms commit 58385c78dc7248bd7bc1040677b05a46a5be42d3. Apache-2.0. Decoder/register schemas retained; BLE replaced with bounded UART transport and guarded, reported-state control. The original adaptation script and research checkout are not part of this standalone publication.

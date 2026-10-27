@@ -1,0 +1,266 @@
+# Prototype board profile: ESP32-C3 Super Mini (not yet hardware-verified).
+# UART session defaults OFF. Do not enable until BMS logic voltage/wiring is checked.
+substitutions:
+  expected_bms_model: JK-B2A20S20P
+  bms_tx_pin: GPIO4
+  bms_rx_pin: GPIO5
+  bms_stat_pin: GPIO6
+  bms_aled_pin: GPIO7
+  bms_reset_pin: GPIO0
+  bms_pwrc_pin: GPIO1
+
+esphome:
+  name: jkbmsprototype
+  friendly_name: JK BMS Prototype
+  project:
+    name: local.jk-bms-uart-prototype
+    version: "0.1.0"
+  build_path: build/jkbmsprototype-c3
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [jk_bms_uart]
+
+wifi:
+  power_save_mode: none
+  output_power: 8.5dB
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA2
+  reboot_timeout: 0s
+  ap:
+    ssid: !secret wifi_ap_ssid
+    password: !secret jkbms_ap_password
+
+api:
+  encryption:
+    key: !secret jkbms_api_key
+  reboot_timeout: 0s
+
+ota:
+  - platform: esphome
+    password: !secret jkbms_ota_password
+
+logger:
+  hardware_uart: USB_SERIAL_JTAG
+  baud_rate: 115200
+  level: INFO
+
+uart:
+  id: bms_uart
+  tx_pin: ${bms_tx_pin}
+  rx_pin: ${bms_rx_pin}
+  baud_rate: 115200
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+  rx_buffer_size: 1024
+
+jk_bms_uart:
+  id: bms
+  uart_id: bms_uart
+  expected_model: ${expected_bms_model}
+  # Initial decoder only; valid device-info determines 24S/32S automatically.
+  protocol_version: JK02_24S
+  throttle: 1s
+  update_interval: 5s
+  at_emulation: true
+  stat_pin: ${bms_stat_pin}
+  aled_pin: ${bms_aled_pin}
+  reset_pin:
+    number: ${bms_reset_pin}
+    mode:
+      input: true
+      pullup: false
+  pwrc_pin:
+    number: ${bms_pwrc_pin}
+    mode:
+      input: true
+      pullup: false
+  transport_status:
+    name: Transport status
+  control_status:
+    name: Last control result
+
+switch:
+  - platform: template
+    id: uart_session
+    name: BMS UART session
+    lambda: return id(bms).session_enabled();
+    turn_on_action:
+      - lambda: id(bms).set_session(true);
+    turn_off_action:
+      - lambda: id(bms).set_session(false);
+  - platform: template
+    name: Unlock BMS controls
+    lambda: return id(bms).controls_unlocked();
+    turn_on_action:
+      - lambda: id(bms).unlock_controls(true);
+    turn_off_action:
+      - lambda: id(bms).unlock_controls(false);
+  - platform: jk_bms_uart
+    jk_bms_uart_id: bms
+    charging:
+      name: Allow charging
+    discharging:
+      name: Allow discharging
+    balancer:
+      name: Balancer enabled
+
+number:
+  - platform: jk_bms_uart
+    jk_bms_uart_id: bms
+    total_battery_capacity:
+      name: Rated battery capacity
+    balance_trigger_voltage:
+      name: Balance trigger difference
+    balancing_start_voltage:
+      name: Balancing start voltage
+    max_balance_current:
+      name: Maximum balancing current
+      max_value: 2.0
+    max_charge_current:
+      name: Maximum charge current
+      max_value: 200.0
+    max_discharge_current:
+      name: Maximum discharge current
+      max_value: 200.0
+    cell_voltage_overvoltage_protection:
+      name: Cell overvoltage protection
+    cell_voltage_overvoltage_recovery:
+      name: Cell overvoltage recovery
+    cell_voltage_undervoltage_protection:
+      name: Cell undervoltage protection
+    cell_voltage_undervoltage_recovery:
+      name: Cell undervoltage recovery
+
+binary_sensor:
+  - platform: template
+    name: BMS telemetry online
+    device_class: connectivity
+    lambda: return id(bms).link_online();
+  - platform: jk_bms_uart
+    jk_bms_uart_id: bms
+    balancing:
+      name: Balancing active
+    charging:
+      name: Charging active
+    discharging:
+      name: Discharging active
+
+text_sensor:
+  - platform: jk_bms_uart
+    jk_bms_uart_id: bms
+    errors:
+      name: BMS alarms
+    hardware_version:
+      name: BMS hardware version
+    software_version:
+      name: BMS firmware version
+    device_model:
+      name: BMS reported model
+  - platform: wifi_info
+    ip_address:
+      name: IP address
+
+sensor:
+  - platform: template
+    name: UART received bytes
+    lambda: return id(bms).rx_bytes();
+    update_interval: 10s
+    accuracy_decimals: 0
+  - platform: template
+    name: Valid BMS frames
+    lambda: return id(bms).valid_frames();
+    update_interval: 10s
+    accuracy_decimals: 0
+  - platform: template
+    name: UART checksum errors
+    lambda: return id(bms).checksum_errors();
+    update_interval: 10s
+    accuracy_decimals: 0
+  - platform: jk_bms_uart
+    jk_bms_uart_id: bms
+    total_voltage:
+      name: Pack voltage
+    current:
+      name: Pack current
+    power:
+      name: Pack power
+    state_of_charge:
+      name: State of charge
+    capacity_remaining:
+      name: Remaining capacity
+    total_battery_capacity_setting:
+      name: Reported rated capacity
+    balancing_current:
+      name: Balancing current
+    temperature_sensor_1:
+      name: Battery temperature 1
+    temperature_sensor_2:
+      name: Battery temperature 2
+    power_tube_temperature:
+      name: MOS temperature
+    delta_cell_voltage:
+      name: Cell voltage spread
+    min_cell_voltage:
+      name: Minimum cell voltage
+    max_cell_voltage:
+      name: Maximum cell voltage
+    charging_cycles:
+      name: Charge cycles
+    cell_voltage_1:
+      name: Cell 01 voltage
+    cell_voltage_2:
+      name: Cell 02 voltage
+    cell_voltage_3:
+      name: Cell 03 voltage
+    cell_voltage_4:
+      name: Cell 04 voltage
+    cell_voltage_5:
+      name: Cell 05 voltage
+    cell_voltage_6:
+      name: Cell 06 voltage
+    cell_voltage_7:
+      name: Cell 07 voltage
+    cell_voltage_8:
+      name: Cell 08 voltage
+    cell_voltage_9:
+      name: Cell 09 voltage
+    cell_voltage_10:
+      name: Cell 10 voltage
+    cell_voltage_11:
+      name: Cell 11 voltage
+    cell_voltage_12:
+      name: Cell 12 voltage
+    cell_voltage_13:
+      name: Cell 13 voltage
+    cell_voltage_14:
+      name: Cell 14 voltage
+    cell_voltage_15:
+      name: Cell 15 voltage
+    cell_voltage_16:
+      name: Cell 16 voltage
+    cell_voltage_17:
+      name: Cell 17 voltage
+    cell_voltage_18:
+      name: Cell 18 voltage
+    cell_voltage_19:
+      name: Cell 19 voltage
+    cell_voltage_20:
+      name: Cell 20 voltage
+    cell_voltage_21:
+      name: Cell 21 voltage
+    cell_voltage_22:
+      name: Cell 22 voltage
+    cell_voltage_23:
+      name: Cell 23 voltage
+    cell_voltage_24:
+      name: Cell 24 voltage
